@@ -141,7 +141,7 @@
 <!-- 請假／代墊付款申請 -->
 <div class="panel" id="panel-requests">
   <button class="refresh-btn" onclick="loadRequests()">🔄 重新載入</button>
-  <div style="font-size:12px;color:#888;text-align:center;margin:-6px 0 12px;">審核請到試算表「請假申請」「代墊付款申請」分頁，把狀態改成核准或駁回</div>
+  <div style="font-size:12px;color:#888;text-align:center;margin:-6px 0 12px;">送出就算數，不用審核。想記錄的話，到試算表把狀態改成「已處理」或「取消」</div>
   <div id="requests-list"><div class="loading">載入中...</div></div>
 </div>
 
@@ -259,8 +259,9 @@ function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function reqBadge(status) {
-  const cls = status === '核准' ? 'badge-ok' : status === '駁回' ? 'badge-no' : 'badge-wait';
-  return `<span class="badge ${cls}">${escHtml(status || '待審核')}</span>`;
+  status = status || '已送出';
+  const cls = ['已處理','核准'].includes(status) ? 'badge-ok' : ['取消','駁回'].includes(status) ? 'badge-no' : 'badge-wait';
+  return `<span class="badge ${cls}">${escHtml(status)}</span>`;
 }
 async function loadRequests() {
   const el = document.getElementById('requests-list');

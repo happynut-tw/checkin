@@ -98,6 +98,13 @@ body {
 .badge.wait { background: #fff4e0; color: #cc7000; }
 .badge.ok   { background: #e6f9ee; color: #06A046; }
 .badge.no   { background: #fdeeee; color: #e74c3c; }
+.badge.sent { background: #eef3ff; color: #3b6fd8; }
+
+/* 同時段請假 */
+.overlap { padding: 11px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+.overlap.free { background: #e6f9ee; color: #06A046; }
+.overlap.busy { background: #fff4e0; color: #b36200; }
+.overlap b { font-weight: 800; }
 </style>
 </head>
 <body>
@@ -147,12 +154,17 @@ body {
         <label>結束</label>
         <div class="row2"><input type="date" id="leaveEndDate"><select id="leaveEndTime"></select></div>
       </div>
+      <div class="overlap free" id="overlapBox">查詢同事請假中...</div>
       <div class="field">
         <label>原因（選填）</label>
         <textarea id="leaveReason" placeholder="例如：小孩發燒要帶去看醫生"></textarea>
       </div>
       <button class="btn-submit" id="btnLeave" onclick="submitLeave()">送出請假申請</button>
       <div class="msg" id="msgLeave"></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">近期大家的請假</div>
+      <div id="teamLeaveList"><div class="loading">載入中...</div></div>
     </div>
     <div class="card">
       <div class="sec-title">我的請假記錄</div>
@@ -219,8 +231,10 @@ function showMsg(id, text, ok){
 }
 
 function badge(status){
-  const cls = status === '核准' ? 'ok' : status === '駁回' ? 'no' : 'wait';
-  return `<span class="badge ${cls}">${esc(status || '待審核')}</span>`;
+  status = status || '已送出';
+  const cls = ['已處理','核准'].includes(status) ? 'ok' : ['取消','駁回'].includes(status) ? 'no'
+            : status === '待審核' ? 'wait' : 'sent';
+  return `<span class="badge ${cls}">${esc(status)}</span>`;
 }
 
 // ── 分頁 ──
@@ -317,6 +331,49 @@ function buildTimeOptions(id, def){
   document.getElementById(id).innerHTML = html;
 }
 
+// ── 同事請假（選日期時就看得到這段時間有沒有人請假）──
+let teamLeave = [];
+function shortDT(s){ return s.slice(5).replace('-', '/'); }   // 2026-10-12 09:00 → 10/12 09:00
+function leaveRange(){
+  return {
+    start: `${document.getElementById('leaveStartDate').value} ${document.getElementById('leaveStartTime').value}`,
+    end:   `${document.getElementById('leaveEndDate').value} ${document.getElementById('leaveEndTime').value}`
+  };
+}
+function renderOverlap(){
+  const box = document.getElementById('overlapBox');
+  const { start, end } = leaveRange();
+  const others = teamLeave.filter(l => !l.mine && l.start < end && l.end > start);
+  if(!others.length){
+    box.className = 'overlap free';
+    box.innerHTML = '✅ 這段時間沒有其他人請假';
+    return;
+  }
+  box.className = 'overlap busy';
+  box.innerHTML = '⚠️ 這段時間已經有人請假：<br>' + others.map(l =>
+    `<b>${esc(l.name)}</b>　${esc(l.leaveType)}　${esc(shortDT(l.start))} ～ ${esc(shortDT(l.end))}`).join('<br>');
+}
+async function loadTeamLeave(){
+  try{
+    const res = await fetch(`${API_URL}?action=team_leave&userId=${encodeURIComponent(userProfile.userId)}`);
+    const result = await res.json();
+    if(!result.success) throw new Error(result.message);
+    teamLeave = result.leave || [];
+    document.getElementById('teamLeaveList').innerHTML = teamLeave.length ? teamLeave.slice(0, 30).map(l => `
+      <div class="req">
+        <div class="top"><div class="main">${esc(l.name)}${l.mine ? '（我）' : ''}</div><div class="sub">${esc(l.leaveType)}</div></div>
+        <div class="sub">${esc(shortDT(l.start))} ～ ${esc(shortDT(l.end))}</div>
+      </div>`).join('') : '<div class="empty">最近沒有人請假</div>';
+    renderOverlap();
+  }catch(e){
+    document.getElementById('overlapBox').className = 'overlap busy';
+    document.getElementById('overlapBox').textContent = '查不到同事請假：' + e.message;
+    document.getElementById('teamLeaveList').innerHTML = `<div class="empty">讀取失敗：${esc(e.message)}</div>`;
+  }
+}
+['leaveStartDate','leaveStartTime','leaveEndDate','leaveEndTime'].forEach(id =>
+  document.getElementById(id).addEventListener('change', renderOverlap));
+
 async function submitLeave(){
   const leaveType = document.getElementById('leaveType').value;
   const sd = document.getElementById('leaveStartDate').value;
@@ -335,9 +392,10 @@ async function submitLeave(){
       reason: document.getElementById('leaveReason').value.trim()
     });
     if(!result.success) throw new Error(result.message);
-    showMsg('msgLeave', '✅ 已送出，等主管審核', true);
+    showMsg('msgLeave', '✅ 已送出，已通知老闆', true);
     document.getElementById('leaveReason').value = '';
     loadRequests();
+    loadTeamLeave();
   }catch(e){
     showMsg('msgLeave', '❌ 送出失敗：' + e.message, false);
   }
@@ -366,7 +424,7 @@ async function submitExpense(){
       note: document.getElementById('expenseNote').value.trim()
     });
     if(!result.success) throw new Error(result.message);
-    showMsg('msgExpense', '✅ 已送出，等主管審核', true);
+    showMsg('msgExpense', '✅ 已送出，已通知老闆', true);
     ['expenseItem','expenseAmount','expenseNote'].forEach(id => document.getElementById(id).value = '');
     loadRequests();
   }catch(e){
@@ -398,6 +456,7 @@ async function main(){
       </div>`;
     loadRecords();
     loadRequests();
+    loadTeamLeave();
   }catch(e){
     document.getElementById('profile').innerHTML =
       `<div style="color:#e74c3c;">初始化失敗：${esc(e.message)}</div>`;
