@@ -212,11 +212,12 @@ const API_URL = CONFIG.API_URL;
 let currentPosition  = null;
 let cachedAddress    = null; // 頁面載入時快取，打卡直接用
 let openPunchPromise = null; // 頁面載入時預查跨日補打
-const APP_VERSION    = 'v1.0';
+const APP_VERSION    = 'v1.1';
 let userProfile      = null;
 let todayStatus      = 'none';
 let locationReady    = false;
 let currentInTime    = null;
+let officePromise    = null; // 公司位置與打卡範圍（後端設定）
 
 // 跨日補打狀態
 let pendingBackfillDate   = null;
@@ -339,6 +340,20 @@ function getLocation(){
   });
 }
 
+async function fetchOffice(){
+  try{
+    const res = await fetch(`${API_URL}?action=office`);
+    return await res.json();
+  }catch(e){ return null; }
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2){
+  const toRad = d => d * Math.PI / 180;
+  const a = Math.sin(toRad(lat2-lat1)/2)**2 +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(toRad(lng2-lng1)/2)**2;
+  return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
 function updateHolidayUI(){
   document.getElementById('holidayRow').classList.toggle('active', document.getElementById('holidayCheck').checked);
 }
@@ -367,7 +382,19 @@ async function initLocation(){
     const lng = pos.coords.longitude;
     const acc = Math.round(pos.coords.accuracy);
 
-    document.getElementById('locStatus').textContent = '📍 定位成功，可以打卡';
+    const office = await (officePromise || fetchOffice());
+    if(office && office.success && office.enabled){
+      const dist = distanceMeters(lat, lng, office.lat, office.lng);
+      if(dist > office.radius && office.block){
+        document.getElementById('locStatus').innerHTML =
+          `🚫 您距離公司約 ${dist} 公尺，要在 ${office.radius} 公尺內才能打卡<br>` +
+          `<button class="btn-backfill-today" style="margin:10px 0 0;" onclick="retryLocation()">🔄 重新定位</button>`;
+        return;
+      }
+      document.getElementById('locStatus').textContent = `📍 在公司範圍內（約 ${dist} 公尺），可以打卡`;
+    } else {
+      document.getElementById('locStatus').textContent = '📍 定位成功，可以打卡';
+    }
     locationReady = true;
     enableVisibleBtn();
 
@@ -379,6 +406,11 @@ async function initLocation(){
   }catch(e){
     document.getElementById('locStatus').textContent = '⚠️ 定位失敗，請開啟定位權限後重新整理';
   }
+}
+
+function retryLocation(){
+  document.getElementById('locStatus').textContent = '📍 定位中...';
+  initLocation();
 }
 
 // ── 打卡核心（可傳入自訂時間戳記）──
@@ -614,6 +646,7 @@ async function main(){
       <div style="font-size:10px;color:#ccc;margin-top:2px;">${CONFIG.COMPANY_NAME}　${APP_VERSION}</div>
     `;
     document.getElementById('clockCard').style.display = 'block';
+    officePromise = fetchOffice();
     initLocation();                 // GPS 最慢，最先啟動（不 await）
     openPunchPromise = fetchOpenPunch();  // 預先查跨日補打，按鈕時不用再等
     await checkTodayStatus();

@@ -93,6 +93,12 @@
   }
 
 
+  .badge-wait { background: #fff4e0; color: #cc7000; }
+  .badge-ok   { background: #e6f9ee; color: #06A046; }
+  .badge-no   { background: #fdeeee; color: #e74c3c; }
+  .req-sub { font-size: 12px; color: #777; margin-top: 5px; line-height: 1.5; }
+  .sec-title { font-size: 14px; font-weight: 700; color: #0f3460; margin: 6px 2px 8px; }
+
   .loading { text-align: center; color: #aaa; font-size: 14px; padding: 40px 0; }
   .empty   { text-align: center; color: #bbb; font-size: 14px; padding: 40px 0; }
   .refresh-btn {
@@ -112,7 +118,8 @@
 <div class="tabs">
   <button class="tab active" onclick="switchTab('today')">📅 今日打卡</button>
   <button class="tab" onclick="switchTab('monthly')">📊 月份打卡</button>
-  </div>
+  <button class="tab" onclick="switchTab('requests')">📝 申請</button>
+</div>
 
 <!-- 今日打卡 -->
 <div class="panel active" id="panel-today">
@@ -131,13 +138,20 @@
   <div id="monthly-list"><div class="loading">載入中...</div></div>
 </div>
 
+<!-- 請假／代墊付款申請 -->
+<div class="panel" id="panel-requests">
+  <button class="refresh-btn" onclick="loadRequests()">🔄 重新載入</button>
+  <div style="font-size:12px;color:#888;text-align:center;margin:-6px 0 12px;">審核請到試算表「請假申請」「代墊付款申請」分頁，把狀態改成核准或駁回</div>
+  <div id="requests-list"><div class="loading">載入中...</div></div>
+</div>
+
 
 
 <script>
 const LIFF_ID = CONFIG.LIFF_ADMIN;
 const API_URL = CONFIG.API_URL;
 
-const TABS = ['today', 'monthly'];
+const TABS = ['today', 'monthly', 'requests'];
 let currentTab = 'today';
 const thisMonth = new Date().toISOString().slice(0, 7);
 const monthState = { monthly: thisMonth };
@@ -152,6 +166,7 @@ function switchTab(tab) {
   document.getElementById('panel-' + tab).classList.add('active');
 
   if (loaders[tab]) { updateMonthLabel(tab); loaders[tab](); }
+  if (tab === 'requests') loadRequests();
 }
 
 function fmtMonth(m) {
@@ -236,6 +251,37 @@ async function loadMonthly() {
     }).join('');
   } catch(e) {
     el.innerHTML = `<div class="empty">載入失敗：${e.message}</div>`;
+  }
+}
+
+// ── 請假／代墊付款申請 ──
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function reqBadge(status) {
+  const cls = status === '核准' ? 'badge-ok' : status === '駁回' ? 'badge-no' : 'badge-wait';
+  return `<span class="badge ${cls}">${escHtml(status || '待審核')}</span>`;
+}
+async function loadRequests() {
+  const el = document.getElementById('requests-list');
+  el.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const res = await fetch(`${API_URL}?action=all_requests`, { credentials: 'omit' });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.message);
+    const leave = result.leave.map(r => `
+      <div class="leave-card">
+        <div class="emp-header"><span class="emp-name">👤 ${escHtml(r.name)}・${escHtml(r.leaveType)}</span>${reqBadge(r.status)}</div>
+        <div class="req-sub">${escHtml(r.start)} ～ ${escHtml(r.end)}${r.reason ? '<br>' + escHtml(r.reason) : ''}<br>送出 ${escHtml(r.submitted)}</div>
+      </div>`).join('') || '<div class="empty" style="padding:16px 0;">沒有請假申請</div>';
+    const expense = result.expense.map(r => `
+      <div class="leave-card">
+        <div class="emp-header"><span class="emp-name">👤 ${escHtml(r.name)}・$${Number(r.amount).toLocaleString()}</span>${reqBadge(r.status)}</div>
+        <div class="req-sub">${escHtml(r.expenseType)}・${escHtml(r.item)}・${escHtml(r.date)}${r.note ? '<br>' + escHtml(r.note) : ''}<br>送出 ${escHtml(r.submitted)}</div>
+      </div>`).join('') || '<div class="empty" style="padding:16px 0;">沒有代墊付款申請</div>';
+    el.innerHTML = `<div class="sec-title">📝 請假</div>${leave}<div class="sec-title">💰 代墊／付款</div>${expense}`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">載入失敗：${escHtml(e.message)}</div>`;
   }
 }
 

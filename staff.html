@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>員工服務</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="config.js"></script>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  background: #f4f5f7; color: #222;
+  margin: 0; padding: 16px;
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh;
+}
+.wrap { width: 100%; max-width: 440px; }
+.card {
+  background: #fff; border-radius: 16px; padding: 18px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 14px;
+}
+.who { display: flex; align-items: center; gap: 12px; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; background: #eee; }
+.who .name { font-size: 16px; font-weight: 700; }
+.who .co { font-size: 12px; color: #999; }
+.loading { font-size: 14px; color: #999; text-align: center; padding: 12px 0; }
+
+/* 分頁按鈕 */
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.tab {
+  flex: 1; padding: 11px 4px; border: 1.5px solid #e0e0e0; border-radius: 12px;
+  background: #fff; font-size: 14px; font-weight: 700; color: #777; cursor: pointer;
+}
+.tab.active { border-color: #06C755; background: #f0faf4; color: #06C755; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* 打卡記錄 */
+.month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.month-nav button {
+  width: 40px; height: 40px; border: 1.5px solid #e0e0e0; border-radius: 10px;
+  background: #fafafa; font-size: 20px; color: #555; cursor: pointer;
+}
+.month-label { font-size: 18px; font-weight: 700; }
+.stats { display: flex; gap: 10px; margin-bottom: 12px; }
+.stat { flex: 1; background: #f0faf4; border-radius: 12px; padding: 10px; text-align: center; }
+.stat .v { font-size: 22px; font-weight: 800; color: #06C755; }
+.stat .k { font-size: 12px; color: #666; margin-top: 2px; }
+.day {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 11px 2px; border-bottom: 1px solid #f0f0f0; font-size: 14px;
+}
+.day:last-child { border-bottom: none; }
+.day .d { font-weight: 700; }
+.day .t { color: #666; font-size: 13px; margin-top: 2px; }
+.day .h { font-weight: 800; color: #06C755; font-size: 16px; text-align: right; }
+.day .warn { color: #e67e22; font-size: 12px; font-weight: 600; }
+.empty { text-align: center; color: #aaa; font-size: 14px; padding: 18px 0; }
+
+/* 表單 */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 700; color: #555; margin-bottom: 6px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 12px; border: 1.5px solid #e0e0e0; border-radius: 10px;
+  font-size: 16px; background: #fafafa; color: #222; font-family: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+.field textarea { min-height: 70px; resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #06C755; background: #fff; outline: none; }
+.row2 { display: flex; gap: 8px; }
+.row2 > * { flex: 1; }
+.choice { display: flex; gap: 8px; }
+.choice button {
+  flex: 1; padding: 12px 6px; border: 2px solid #e0e0e0; border-radius: 10px;
+  background: #fafafa; font-size: 14px; font-weight: 700; color: #888; cursor: pointer; line-height: 1.4;
+}
+.choice button small { display: block; font-size: 11px; font-weight: 500; }
+.choice button.on { border-color: #06C755; background: #f0faf4; color: #06C755; }
+.hint { font-size: 12px; color: #999; margin-top: -6px; margin-bottom: 14px; line-height: 1.6; }
+.btn-submit {
+  width: 100%; padding: 15px; border: none; border-radius: 12px;
+  background: #06C755; color: #fff; font-size: 17px; font-weight: 800; cursor: pointer;
+}
+.btn-submit:disabled { opacity: 0.5; }
+.msg { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 14px; display: none; }
+.msg.ok  { background: #e6f9ee; color: #06C755; display: block; }
+.msg.err { background: #fdeeee; color: #e74c3c; display: block; }
+
+/* 申請記錄 */
+.sec-title { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
+.req { padding: 11px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+.req:last-child { border-bottom: none; }
+.req .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.req .main { font-weight: 700; }
+.req .sub { color: #777; font-size: 12px; margin-top: 3px; line-height: 1.5; }
+.badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+.badge.wait { background: #fff4e0; color: #cc7000; }
+.badge.ok   { background: #e6f9ee; color: #06A046; }
+.badge.no   { background: #fdeeee; color: #e74c3c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card"><div id="profile" class="loading">載入中...</div></div>
+
+  <div class="tabs">
+    <button class="tab" data-tab="records">📅 打卡記錄</button>
+    <button class="tab" data-tab="leave">📝 請假</button>
+    <button class="tab" data-tab="expense">💰 代墊付款</button>
+  </div>
+
+  <!-- ── 本月打卡記錄 ── -->
+  <div class="panel" id="panel-records">
+    <div class="card">
+      <div class="month-nav">
+        <button onclick="changeMonth(-1)">‹</button>
+        <div class="month-label" id="monthLabel"></div>
+        <button onclick="changeMonth(1)">›</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="statDays">-</div><div class="k">出勤天數</div></div>
+        <div class="stat"><div class="v" id="statHours">-</div><div class="k">總時數</div></div>
+      </div>
+      <div id="dayList"><div class="loading">載入中...</div></div>
+    </div>
+  </div>
+
+  <!-- ── 請假申請 ── -->
+  <div class="panel" id="panel-leave">
+    <div class="card">
+      <div class="field">
+        <label>假別</label>
+        <select id="leaveType">
+          <option value="">請選擇</option>
+          <option>特休</option><option>事假</option><option>病假</option>
+          <option>生理假</option><option>婚假</option><option>喪假</option>
+          <option>公假</option><option>其他</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>開始</label>
+        <div class="row2"><input type="date" id="leaveStartDate"><select id="leaveStartTime"></select></div>
+      </div>
+      <div class="field">
+        <label>結束</label>
+        <div class="row2"><input type="date" id="leaveEndDate"><select id="leaveEndTime"></select></div>
+      </div>
+      <div class="field">
+        <label>原因（選填）</label>
+        <textarea id="leaveReason" placeholder="例如：小孩發燒要帶去看醫生"></textarea>
+      </div>
+      <button class="btn-submit" id="btnLeave" onclick="submitLeave()">送出請假申請</button>
+      <div class="msg" id="msgLeave"></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">我的請假記錄</div>
+      <div id="leaveList"><div class="loading">載入中...</div></div>
+    </div>
+  </div>
+
+  <!-- ── 代墊或付款申請 ── -->
+  <div class="panel" id="panel-expense">
+    <div class="card">
+      <div class="field">
+        <label>類型</label>
+        <div class="choice" id="expenseTypeChoice">
+          <button data-v="代墊">代墊<small>我先付了，請公司還我</small></button>
+          <button data-v="付款申請">付款申請<small>請公司直接付款</small></button>
+        </div>
+      </div>
+      <div class="field">
+        <label>日期</label>
+        <input type="date" id="expenseDate">
+      </div>
+      <div class="field">
+        <label>項目</label>
+        <input type="text" id="expenseItem" placeholder="例如：買文具、叫貨運">
+      </div>
+      <div class="field">
+        <label>金額（元）</label>
+        <input type="number" id="expenseAmount" inputmode="numeric" min="1" placeholder="0">
+      </div>
+      <div class="field">
+        <label>說明（選填）</label>
+        <textarea id="expenseNote" placeholder="例如：付給哪家廠商、用途"></textarea>
+      </div>
+      <div class="hint">📷 收據或發票請拍照，用 LINE 傳給老闆。</div>
+      <button class="btn-submit" id="btnExpense" onclick="submitExpense()">送出申請</button>
+      <div class="msg" id="msgExpense"></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">我的申請記錄</div>
+      <div id="expenseList"><div class="loading">載入中...</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const LIFF_ID = CONFIG.LIFF_STAFF;
+const API_URL = CONFIG.API_URL;
+const WEEK = ['日','一','二','三','四','五','六'];
+
+let userProfile = null;
+let month = thisMonth();
+let expenseType = '';
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function thisMonth(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+function todayStr(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function showMsg(id, text, ok){
+  const box = document.getElementById(id);
+  box.textContent = text;
+  box.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function badge(status){
+  const cls = status === '核准' ? 'ok' : status === '駁回' ? 'no' : 'wait';
+  return `<span class="badge ${cls}">${esc(status || '待審核')}</span>`;
+}
+
+// ── 分頁 ──
+function switchTab(name){
+  if(!['records','leave','expense'].includes(name)) name = 'records';
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+// ── 打卡記錄 ──
+function changeMonth(delta){
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  month = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+  loadRecords();
+}
+
+async function loadRecords(){
+  const [y, m] = month.split('-');
+  document.getElementById('monthLabel').textContent = `${y} 年 ${Number(m)} 月`;
+  const list = document.getElementById('dayList');
+  list.innerHTML = '<div class="loading">載入中...</div>';
+  try{
+    const res = await fetch(`${API_URL}?action=monthly&userId=${encodeURIComponent(userProfile.userId)}&month=${month}`);
+    const result = await res.json();
+    if(!result.success) throw new Error(result.message);
+    const rows = result.data || [];
+    const total = rows.reduce((s, r) => s + (Number(r.totalHours) || 0), 0);
+    document.getElementById('statDays').textContent = rows.filter(r => r.inTime).length;
+    document.getElementById('statHours').textContent = Math.round(total * 10) / 10;
+    if(!rows.length){ list.innerHTML = '<div class="empty">這個月還沒有打卡記錄</div>'; return; }
+    list.innerHTML = rows.slice().reverse().map(r => {
+      const [yy, mm, dd] = r.date.split('-').map(Number);
+      const label = `${mm}/${dd}（${WEEK[new Date(yy, mm - 1, dd).getDay()]}）`;
+      const inT  = r.inTime  ? r.inTime.slice(0,5)  : '--:--';
+      const outT = r.outTime ? r.outTime.slice(0,5) : '--:--';
+      const warn = r.status === '尚未下班' ? '<div class="warn">沒打下班卡</div>' : '';
+      return `<div class="day">
+        <div><div class="d">${label}</div><div class="t">上班 ${inT}　下班 ${outT}</div></div>
+        <div><div class="h">${r.totalHours} 小時</div>${warn}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">讀取失敗：${esc(e.message)}</div>`;
+  }
+}
+
+// ── 申請記錄 ──
+async function loadRequests(){
+  try{
+    const res = await fetch(`${API_URL}?action=my_requests&userId=${encodeURIComponent(userProfile.userId)}`);
+    const result = await res.json();
+    if(!result.success) throw new Error(result.message);
+
+    const leave = result.leave || [];
+    document.getElementById('leaveList').innerHTML = leave.length ? leave.map(r => `
+      <div class="req">
+        <div class="top"><div class="main">${esc(r.leaveType)}</div>${badge(r.status)}</div>
+        <div class="sub">${esc(r.start)} ～ ${esc(r.end)}${r.reason ? '<br>' + esc(r.reason) : ''}${r.note ? '<br>主管：' + esc(r.note) : ''}</div>
+      </div>`).join('') : '<div class="empty">還沒有請假記錄</div>';
+
+    const expense = result.expense || [];
+    document.getElementById('expenseList').innerHTML = expense.length ? expense.map(r => `
+      <div class="req">
+        <div class="top"><div class="main">${esc(r.item)}　$${Number(r.amount).toLocaleString()}</div>${badge(r.status)}</div>
+        <div class="sub">${esc(r.expenseType)}・${esc(r.date)}${r.note ? '<br>' + esc(r.note) : ''}${r.reply ? '<br>主管：' + esc(r.reply) : ''}</div>
+      </div>`).join('') : '<div class="empty">還沒有申請記錄</div>';
+  }catch(e){
+    const msg = `<div class="empty">讀取失敗：${esc(e.message)}</div>`;
+    document.getElementById('leaveList').innerHTML = msg;
+    document.getElementById('expenseList').innerHTML = msg;
+  }
+}
+
+async function postRequest(payload){
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ userId: userProfile.userId, name: userProfile.displayName, ...payload })
+  });
+  return res.json();
+}
+
+// ── 請假 ──
+function buildTimeOptions(id, def){
+  let html = '';
+  for(let h = 7; h <= 22; h++){
+    for(const m of [0, 30]){
+      const v = `${pad(h)}:${pad(m)}`;
+      html += `<option value="${v}" ${v === def ? 'selected' : ''}>${v}</option>`;
+    }
+  }
+  document.getElementById(id).innerHTML = html;
+}
+
+async function submitLeave(){
+  const leaveType = document.getElementById('leaveType').value;
+  const sd = document.getElementById('leaveStartDate').value;
+  const ed = document.getElementById('leaveEndDate').value;
+  const start = `${sd} ${document.getElementById('leaveStartTime').value}`;
+  const end   = `${ed} ${document.getElementById('leaveEndTime').value}`;
+  if(!leaveType){ showMsg('msgLeave', '請選擇假別', false); return; }
+  if(!sd || !ed){ showMsg('msgLeave', '請選擇開始和結束日期', false); return; }
+  if(end <= start){ showMsg('msgLeave', '結束時間要晚於開始時間', false); return; }
+
+  const btn = document.getElementById('btnLeave');
+  btn.disabled = true; btn.textContent = '送出中...';
+  try{
+    const result = await postRequest({
+      action: 'leave', leaveType, start, end,
+      reason: document.getElementById('leaveReason').value.trim()
+    });
+    if(!result.success) throw new Error(result.message);
+    showMsg('msgLeave', '✅ 已送出，等主管審核', true);
+    document.getElementById('leaveReason').value = '';
+    loadRequests();
+  }catch(e){
+    showMsg('msgLeave', '❌ 送出失敗：' + e.message, false);
+  }
+  btn.disabled = false; btn.textContent = '送出請假申請';
+}
+
+// ── 代墊／付款 ──
+document.querySelectorAll('#expenseTypeChoice button').forEach(b => b.addEventListener('click', () => {
+  expenseType = b.dataset.v;
+  document.querySelectorAll('#expenseTypeChoice button').forEach(x => x.classList.toggle('on', x === b));
+}));
+
+async function submitExpense(){
+  const item   = document.getElementById('expenseItem').value.trim();
+  const amount = Number(document.getElementById('expenseAmount').value);
+  if(!expenseType){ showMsg('msgExpense', '請選擇類型', false); return; }
+  if(!item){ showMsg('msgExpense', '請填寫項目', false); return; }
+  if(!(amount > 0)){ showMsg('msgExpense', '請填寫金額', false); return; }
+
+  const btn = document.getElementById('btnExpense');
+  btn.disabled = true; btn.textContent = '送出中...';
+  try{
+    const result = await postRequest({
+      action: 'expense', expenseType, item, amount,
+      date: document.getElementById('expenseDate').value,
+      note: document.getElementById('expenseNote').value.trim()
+    });
+    if(!result.success) throw new Error(result.message);
+    showMsg('msgExpense', '✅ 已送出，等主管審核', true);
+    ['expenseItem','expenseAmount','expenseNote'].forEach(id => document.getElementById(id).value = '');
+    loadRequests();
+  }catch(e){
+    showMsg('msgExpense', '❌ 送出失敗：' + e.message, false);
+  }
+  btn.disabled = false; btn.textContent = '送出申請';
+}
+
+// ── 啟動 ──
+async function main(){
+  // 選單連結用 ?tab=records / leave / expense 開啟指定分頁
+  switchTab(new URLSearchParams(location.search).get('tab'));
+  const today = todayStr();
+  ['leaveStartDate','leaveEndDate','expenseDate'].forEach(id => document.getElementById(id).value = today);
+  buildTimeOptions('leaveStartTime', '09:00');
+  buildTimeOptions('leaveEndTime', '18:00');
+
+  try{
+    await liff.init({ liffId: LIFF_ID });
+    if(!liff.isLoggedIn()){ liff.login(); return; }
+    // liff.init 之後網址才會帶上 ?tab=
+    switchTab(new URLSearchParams(location.search).get('tab'));
+    userProfile = await liff.getProfile();
+    document.getElementById('profile').className = '';
+    document.getElementById('profile').innerHTML = `
+      <div class="who">
+        ${userProfile.pictureUrl ? `<img class="avatar" src="${esc(userProfile.pictureUrl)}">` : '<div class="avatar"></div>'}
+        <div><div class="name">${esc(userProfile.displayName)}</div><div class="co">${esc(CONFIG.COMPANY_NAME)}</div></div>
+      </div>`;
+    loadRecords();
+    loadRequests();
+  }catch(e){
+    document.getElementById('profile').innerHTML =
+      `<div style="color:#e74c3c;">初始化失敗：${esc(e.message)}</div>`;
+  }
+}
+
+main();
+</script>
+</body>
+</html>
