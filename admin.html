@@ -119,6 +119,7 @@
   <button class="tab active" onclick="switchTab('today')">📅 今日打卡</button>
   <button class="tab" onclick="switchTab('monthly')">📊 月份打卡</button>
   <button class="tab" onclick="switchTab('requests')">📝 申請</button>
+  <button class="tab" onclick="switchTab('payroll')">💰 薪資</button>
 </div>
 
 <!-- 今日打卡 -->
@@ -147,15 +148,30 @@
 
 
 
+<!-- 薪資 -->
+<div class="panel" id="panel-payroll">
+  <div class="month-bar">
+    <button onclick="changeMonth('payroll', -1)">‹</button>
+    <div class="month-label" id="payroll-label"></div>
+    <button onclick="changeMonth('payroll', 1)">›</button>
+  </div>
+  <button class="refresh-btn" onclick="loadPayroll()">🔄 重新載入</button>
+  <div id="payroll-list"><div class="loading">載入中...</div></div>
+  <div style="font-size:12px;color:#888;text-align:center;margin:12px 0 20px;line-height:1.7;">
+    薪資＝時數 × 時薪，扣款來自試算表「扣款記錄」與健保眷屬。<br>
+    正式薪資單：試算表上方「打卡薪資」→「產生上個月薪資表」
+  </div>
+</div>
+
 <script>
 const LIFF_ID = CONFIG.LIFF_ADMIN;
 const API_URL = CONFIG.API_URL;
 
-const TABS = ['today', 'monthly', 'requests'];
+const TABS = ['today', 'monthly', 'requests', 'payroll'];
 let currentTab = 'today';
 const thisMonth = new Date().toISOString().slice(0, 7);
-const monthState = { monthly: thisMonth };
-const loaders    = { monthly: loadMonthly };
+const monthState = { monthly: thisMonth, payroll: thisMonth };
+const loaders    = { monthly: loadMonthly, payroll: loadPayroll };
 
 function switchTab(tab) {
   currentTab = tab;
@@ -283,6 +299,73 @@ async function loadRequests() {
     el.innerHTML = `<div class="sec-title">📝 請假</div>${leave}<div class="sec-title">💰 代墊／付款</div>${expense}`;
   } catch (e) {
     el.innerHTML = `<div class="empty">載入失敗：${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── 薪資（只有老闆看得到）──
+async function postAdmin(payload) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ accessToken: liff.getAccessToken(), ...payload })
+  });
+  return res.json();
+}
+let payrollRows = [];
+async function loadPayroll() {
+  const el = document.getElementById('payroll-list');
+  el.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const result = await postAdmin({ action: 'payroll', month: monthState.payroll });
+    if (!result.success) throw new Error(result.message);
+    payrollRows = result.employees;
+    if (!payrollRows.length) { el.innerHTML = '<div class="empty">這個月沒有員工資料</div>'; return; }
+    const total = payrollRows.reduce((t, e) => t + e.net, 0);
+    const money = n => '$' + Number(n).toLocaleString();
+    el.innerHTML = `
+      <div class="emp-card" style="text-align:center;">
+        <div style="font-size:13px;color:#888;">本月實付合計</div>
+        <div style="font-size:26px;font-weight:800;color:#0f3460;">${money(total)}</div>
+      </div>` + payrollRows.map((e, i) => `
+      <div class="emp-card">
+        <div class="emp-header">
+          <span class="emp-name">👤 ${escHtml(e.name)}</span>
+          <span style="font-size:12px;color:#888;">${escHtml(e.title)}</span>
+        </div>
+        <div class="summary">
+          <div class="summary-item">出勤 <strong>${e.days} 天</strong></div>
+          <div class="summary-item">工時 <strong>${e.hours} h</strong></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin:10px 0;">
+          <span style="font-size:13px;color:#555;white-space:nowrap;">時薪</span>
+          <input id="rate-${i}" type="number" inputmode="numeric" min="1" value="${e.rate || ''}" placeholder="請輸入時薪"
+            style="flex:1;min-width:0;padding:9px;border:1.5px solid ${e.rate ? '#ddd' : '#e67e22'};border-radius:8px;font-size:16px;">
+          <button onclick="saveRate(${i})" id="save-${i}"
+            style="background:#06C755;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">儲存</button>
+        </div>
+        ${e.rate ? `<div class="req-sub" style="line-height:1.8;">
+          薪資 ${e.hours} h × ${money(e.rate)} ＝ <b>${money(e.pay)}</b><br>
+          ${e.deduction ? `扣款 −${money(e.deduction)}<br>` : ''}
+          <span style="font-size:15px;color:#0f3460;font-weight:800;">實付 ${money(e.net)}</span>
+        </div>` : '<div class="req-sub" style="color:#e67e22;">還沒設定時薪，填好按儲存就會算薪資</div>'}
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty">載入失敗：${escHtml(e.message)}</div>`;
+  }
+}
+async function saveRate(i) {
+  const e = payrollRows[i];
+  const rate = Number(document.getElementById('rate-' + i).value);
+  if (!(rate > 0)) { alert('請輸入時薪'); return; }
+  const btn = document.getElementById('save-' + i);
+  btn.disabled = true; btn.textContent = '儲存中';
+  try {
+    const result = await postAdmin({ action: 'set_rate', userId: e.userId, name: e.name, rate });
+    if (!result.success) throw new Error(result.message);
+    loadPayroll();
+  } catch (err) {
+    alert('儲存失敗：' + err.message);
+    btn.disabled = false; btn.textContent = '儲存';
   }
 }
 
