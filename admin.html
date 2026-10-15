@@ -27,7 +27,7 @@
     position: sticky; top: 0; z-index: 10;
   }
   .tab {
-    flex: 1; padding: 12px 4px; border: none; background: transparent;
+    flex: 1; padding: 8px 2px; line-height: 1.35; border: none; background: transparent;
     font-size: 13px; font-weight: 600; color: #999; cursor: pointer;
     border-bottom: 3px solid transparent; margin-bottom: -2px;
     transition: all 0.2s;
@@ -94,6 +94,32 @@
 
 
   .badge-wait { background: #fff4e0; color: #cc7000; }
+
+  /* 上班表（月曆） */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-wd { text-align: center; font-size: 11px; font-weight: 700; color: #888; padding: 2px 0 4px; }
+  .cal-wd.we { color: #e74c3c; }
+  .cal-cell {
+    background: #fff; border-radius: 8px; min-height: 74px; padding: 3px 2px 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); cursor: pointer; overflow: hidden;
+    display: flex; flex-direction: column; gap: 2px; border: 2px solid transparent;
+  }
+  .cal-cell.blank { background: transparent; box-shadow: none; cursor: default; }
+  .cal-cell.leave { background: #fff7ec; }
+  .cal-cell.today { border-color: #0f3460; }
+  .cal-cell.sel { border-color: #f39c12; }
+  .cal-num { font-size: 12px; font-weight: 800; color: #333; padding-left: 3px; }
+  .cal-num.we { color: #e74c3c; }
+  .tag { font-size: 10px; line-height: 1.35; border-radius: 4px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag.work  { background: #e6f9ee; color: #06A046; }
+  .tag.leave { background: #f39c12; color: #fff; font-weight: 700; }
+  .tag.more  { color: #999; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 14px; white-space: nowrap; display: inline-block; margin: 2px 0; }
+  .chip.work  { background: #e6f9ee; color: #06A046; }
+  .chip.leave { background: #f39c12; color: #fff; font-weight: 700; }
+  .cal-detail { background: #fff; border-radius: 12px; padding: 12px 14px; margin-top: 12px; box-shadow: 0 1px 6px rgba(0,0,0,.06); font-size: 13px; line-height: 1.8; }
+  .cal-detail b { color: #0f3460; }
+  .cal-sum { background: #fff; border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; box-shadow: 0 1px 6px rgba(0,0,0,.06); font-size: 13px; color: #555; }
   .badge-ok   { background: #e6f9ee; color: #06A046; }
   .badge-no   { background: #fdeeee; color: #e74c3c; }
   .req-sub { font-size: 12px; color: #777; margin-top: 5px; line-height: 1.5; }
@@ -116,10 +142,11 @@
 </div>
 
 <div class="tabs">
-  <button class="tab active" onclick="switchTab('today')">📅 今日打卡</button>
-  <button class="tab" onclick="switchTab('monthly')">📊 月份打卡</button>
-  <button class="tab" onclick="switchTab('requests')">📝 申請</button>
-  <button class="tab" onclick="switchTab('payroll')">💰 薪資</button>
+  <button class="tab active" onclick="switchTab('today')">📅<br>今日</button>
+  <button class="tab" onclick="switchTab('monthly')">📊<br>月份打卡</button>
+  <button class="tab" onclick="switchTab('calendar')">🗓️<br>上班表</button>
+  <button class="tab" onclick="switchTab('requests')">📝<br>申請</button>
+  <button class="tab" onclick="switchTab('payroll')">💰<br>薪資</button>
 </div>
 
 <!-- 今日打卡 -->
@@ -137,6 +164,19 @@
   </div>
   <button class="refresh-btn" onclick="loadMonthly()">🔄 重新載入</button>
   <div id="monthly-list"><div class="loading">載入中...</div></div>
+</div>
+
+<!-- 上班表 -->
+<div class="panel" id="panel-calendar">
+  <div class="month-bar">
+    <button onclick="changeMonth('calendar', -1)">‹</button>
+    <div class="month-label" id="calendar-label"></div>
+    <button onclick="changeMonth('calendar', 1)">›</button>
+  </div>
+  <div style="font-size:12px;color:#888;text-align:center;margin:-4px 0 10px;">
+    <span class="chip work">綠色</span> 有打卡上班　<span class="chip leave">橘色</span> 請假　點日子看詳細
+  </div>
+  <div id="calendar-list"><div class="loading">載入中...</div></div>
 </div>
 
 <!-- 請假／代墊付款申請 -->
@@ -167,11 +207,11 @@
 const LIFF_ID = CONFIG.LIFF_ADMIN;
 const API_URL = CONFIG.API_URL;
 
-const TABS = ['today', 'monthly', 'requests', 'payroll'];
+const TABS = ['today', 'monthly', 'calendar', 'requests', 'payroll'];
 let currentTab = 'today';
 const thisMonth = new Date().toISOString().slice(0, 7);
-const monthState = { monthly: thisMonth, payroll: thisMonth };
-const loaders    = { monthly: loadMonthly, payroll: loadPayroll };
+const monthState = { monthly: thisMonth, calendar: thisMonth, payroll: thisMonth };
+const loaders    = { monthly: loadMonthly, calendar: loadCalendar, payroll: loadPayroll };
 
 function switchTab(tab) {
   currentTab = tab;
@@ -297,6 +337,68 @@ async function loadRequests() {
         <div class="req-sub">${escHtml(r.expenseType)}・${escHtml(r.item)}・${escHtml(r.date)}${r.note ? '<br>' + escHtml(r.note) : ''}<br>送出 ${escHtml(r.submitted)}</div>
       </div>`).join('') || '<div class="empty" style="padding:16px 0;">沒有代墊付款申請</div>';
     el.innerHTML = `<div class="sec-title">📝 請假</div>${leave}<div class="sec-title">💰 代墊／付款</div>${expense}`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">載入失敗：${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── 上班表：整個月的月曆，每天誰上班、誰請假 ──
+let calDays = [], calSel = null;
+const W = ['日', '一', '二', '三', '四', '五', '六'];
+function todayStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+function workersOf(d) { const ln = d.leave.map(l => l.name); return d.worked.filter(n => !ln.includes(n)); }
+function renderCalendar() {
+  const el = document.getElementById('calendar-list');
+  if (!calDays.length) { el.innerHTML = '<div class="empty">沒有資料</div>'; return; }
+  const today = todayStr();
+  const [y, m] = calDays[0].date.split('-').map(Number);
+  const firstWd = new Date(y, m - 1, 1).getDay();
+  const leaveDays = calDays.filter(d => d.leave.length).length;
+  const leaveCount = calDays.reduce((t, d) => t + d.leave.length, 0);
+
+  let html = `<div class="cal-sum">本月有 <b>${leaveDays}</b> 天有人請假（共 ${leaveCount} 人次）</div><div class="cal-grid">`;
+  html += W.map((w, i) => `<div class="cal-wd${i === 0 || i === 6 ? ' we' : ''}">${w}</div>`).join('');
+  for (let i = 0; i < firstWd; i++) html += '<div class="cal-cell blank"></div>';
+  calDays.forEach(d => {
+    const dd = Number(d.date.slice(8));
+    const wd = (firstWd + dd - 1) % 7;
+    const tags = d.leave.map(l => `<div class="tag leave">${escHtml(l.name)} 假</div>`)
+      .concat(workersOf(d).map(n => `<div class="tag work">${escHtml(n)}</div>`));
+    const shown = tags.length > 4 ? tags.slice(0, 3).concat(`<div class="tag more">+${tags.length - 3}</div>`) : tags;
+    const cls = ['cal-cell', d.leave.length ? 'leave' : '', d.date === today ? 'today' : '', d.date === calSel ? 'sel' : ''].join(' ');
+    html += `<div class="${cls}" onclick="selectDay('${d.date}')">
+      <div class="cal-num${wd === 0 || wd === 6 ? ' we' : ''}">${dd}</div>${shown.join('')}</div>`;
+  });
+  html += '</div><div id="cal-detail"></div>';
+  el.innerHTML = html;
+  if (calSel) showDetail(calSel);
+}
+function selectDay(date) { calSel = date; renderCalendar(); }
+function showDetail(date) {
+  const d = calDays.find(x => x.date === date);
+  if (!d) return;
+  const [, m, dd] = date.split('-').map(Number);
+  const wd = new Date(date + 'T00:00:00').getDay();
+  const leave = d.leave.map(l => `<span class="chip leave">${escHtml(l.name)}・${escHtml(l.leaveType)}${l.time === '全天' ? '' : ' ' + escHtml(l.time)}</span>`).join(' ');
+  const work = workersOf(d).map(n => `<span class="chip work">${escHtml(n)}</span>`).join(' ');
+  document.getElementById('cal-detail').innerHTML = `<div class="cal-detail">
+    <b>${m}/${dd}（${W[wd]}）</b><br>
+    請假：${leave || '沒有'}<br>
+    上班：${work || (date > todayStr() ? '還沒到' : '沒有人打卡')}
+  </div>`;
+}
+async function loadCalendar() {
+  const el = document.getElementById('calendar-list');
+  el.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const res = await fetch(`${API_URL}?action=calendar&month=${monthState.calendar}`, { credentials: 'omit' });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.message);
+    calDays = result.days;
+    renderCalendar();
   } catch (e) {
     el.innerHTML = `<div class="empty">載入失敗：${escHtml(e.message)}</div>`;
   }
